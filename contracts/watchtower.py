@@ -1,5 +1,6 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
+import time
 from dataclasses import dataclass
 
 
@@ -10,7 +11,7 @@ class Monitor:
     name: str
     url: str
     alert_threshold: u256
-    status: str  # unknown | up | down
+    status: str  # unknown | up | down | removed
     up_checks: u256
     down_checks: u256
     consecutive_failures: u256
@@ -57,7 +58,7 @@ class Watchtower(gl.Contract):
             down_checks=u256(0),
             consecutive_failures=u256(0),
             last_check=u256(0),
-            created_at=gl.block.timestamp,
+            created_at=u256(int(time.time())),
         )
         self.monitor_counter = monitor_id + u256(1)
         return monitor_id
@@ -67,11 +68,14 @@ class Watchtower(gl.Contract):
         monitor = self.monitors[monitor_id]
         if str(gl.message.sender_address) != monitor.owner:
             raise gl.vm.UserError("only the monitor owner can remove it")
-        del self.monitors[monitor_id]
+        monitor.status = "removed"
+        self.monitors[monitor_id] = monitor
 
     @gl.public.write
     def probe(self, monitor_id: u256) -> str:
         monitor = self.monitors[monitor_id]
+        if monitor.status == "removed":
+            raise gl.vm.UserError("monitor was removed")
         url = monitor.url  # storage is not visible inside the nondet block
 
         def probe_once() -> str:
@@ -101,7 +105,7 @@ class Watchtower(gl.Contract):
         self.checks[check_id] = Check(
             monitor_id=monitor_id,
             verdict=verdict,
-            checked_at=gl.block.timestamp,
+            checked_at=u256(int(time.time())),
         )
         self.check_counter = check_id + u256(1)
 
@@ -112,7 +116,7 @@ class Watchtower(gl.Contract):
             monitor.down_checks = monitor.down_checks + u256(1)
             monitor.consecutive_failures = monitor.consecutive_failures + u256(1)
         monitor.status = verdict
-        monitor.last_check = gl.block.timestamp
+        monitor.last_check = u256(int(time.time()))
         self.monitors[monitor_id] = monitor
         return verdict
 
@@ -164,3 +168,13 @@ class Watchtower(gl.Contract):
     @gl.public.view
     def get_check_count(self) -> int:
         return int(self.check_counter)
+
+    @gl.public.view
+    def monitor_status(self, monitor_id: u256) -> str:
+        return self.monitors[monitor_id].status
+
+    @gl.public.view
+    def is_breaching(self, monitor_id: u256) -> bool:
+        m = self.monitors[monitor_id]
+        total = m.up_checks + m.down_checks
+        return bool(total > u256(0) and m.consecutive_failures >= m.alert_threshold)
