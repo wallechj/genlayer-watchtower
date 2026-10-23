@@ -31,7 +31,8 @@ Negative checks:
 `get_check(0)` → `{monitor_id: 0, verdict: "up", checked_at: <ts>}`.
 `get_check(1)` → `{monitor_id: 1, verdict: "down", ...}`.
 
-## 5. Access control (account B)
+## 5. Access control and removal (account B, then A)
 
 `remove_monitor(0)` as account B → `UserError: only the monitor owner can remove it`.
-`remove_monitor(1)` as account A → succeeds; `get_monitor(1)` afterwards errors (no such monitor).
+`remove_monitor(1)` as account A → succeeds; `monitor_status(1)` → `"removed"`.
+`probe(1)` afterwards → `UserError: monitor was removed`.
